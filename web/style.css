@@ -89,17 +89,22 @@ button#run:disabled { opacity: .6; cursor: default; }
 .metric-value { font-size: 28px; font-weight: 700; }
 .metric.secondary .metric-value { font-size: 20px; font-weight: 600; }
 
-/* Strategy params injected into the controls bar. */
 .params { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
 .params .field input { min-width: 110px; }
 
-/* Chart toolbar. */
+
 .chart-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   margin: 4px 2px 14px;
+}
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .toggle-group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .toggle {
@@ -111,7 +116,8 @@ button#run:disabled { opacity: .6; cursor: default; }
   cursor: pointer;
 }
 .toggle.active { background: var(--accent); color: #1a1a1a; font-weight: 600; }
-.checkbox { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+.checkbox { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+.checkbox input { accent-color: var(--accent); }
 .ghost {
   background: transparent;
   color: var(--text);
@@ -122,7 +128,6 @@ button#run:disabled { opacity: .6; cursor: default; }
   cursor: pointer;
 }
 .ghost:hover { border-color: var(--accent); }
-.hint { color: var(--muted); font-size: 12px; }
 
 .chart-wrap {
   background: var(--panel);

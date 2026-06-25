@@ -12,46 +12,47 @@ import (
 	"github.com/leykun/bybit-backtester/internal/strategy"
 )
 
-// allowed inputs — the prototype's fixed surface.
 var (
-	allowedSymbols    = map[string]bool{"BTCUSDT": true, "ETHUSDT": true}
-	allowedIntervals  = map[string]bool{"1": true, "5": true, "15": true}
-	allowedStrategies = map[string]bool{"ma_crossover": true, "rsi_reversion": true}
+	allowedSymbols = map[string]bool{"BTCUSDT": true, "ETHUSDT": true}
+	allowedIntervals = map[string]bool{"1": true, "5": true, "15": true}
+	allowedStrategies = map[string]bool{
+		"ma_crossover":      true,
+		"rsi_reversion":     true,
+		"ema_crossover":     true,
+		"bollinger_bounce":  true,
+		"breakout":          true,
+		"momentum_pct":      true,
+		"tp_sl":             true,
+	}
 )
 
-// BacktestRequest is the validated input for a run. Params carries the
-// strategy-specific knobs (e.g. fast/slow for MA, period/oversold/overbought for
-// RSI); unknown or missing keys fall back to sensible defaults.
 type BacktestRequest struct {
 	Symbol   string         `json:"symbol"`
 	Interval string         `json:"interval"`
 	Strategy string         `json:"strategy"`
-	Days     int            `json:"days"` // lookback window; defaults to 30
+	Days     int            `json:"days"`
 	Params   map[string]int `json:"params"`
 }
 
-// BacktestResult is the full payload returned to the frontend.
 type BacktestResult struct {
-	Request    BacktestRequest                     `json:"request"`
-	Metrics    metrics.Result                      `json:"metrics"`
-	Equity     []portfolio.EquityPoint             `json:"equity_curve"`
-	Price      []pricePoint                        `json:"price"`      // close price per bar
-	Indicators map[string][]strategy.IndicatorPoint `json:"indicators"` // overlay series
-	RSIBands   *rsiBands                           `json:"rsi_bands,omitempty"`
-	Trades     []portfolio.TradeLog                `json:"trades"`
-	Bars       int                                 `json:"bars"`
-	From       time.Time                           `json:"from"`
-	To         time.Time                           `json:"to"`
-	BuildMS    int64                               `json:"build_ms"`
+	Request    BacktestRequest                      `json:"request"`
+	Metrics    metrics.Result                       `json:"metrics"`
+	Equity     []portfolio.EquityPoint              `json:"equity_curve"`
+	Price      []pricePoint                         `json:"price"`
+	Indicators map[string][]strategy.IndicatorPoint `json:"indicators"`
+	RSIBands   *rsiBands                            `json:"rsi_bands,omitempty"`
+	Trades     []portfolio.TradeLog                 `json:"trades"`
+	Bars       int                                  `json:"bars"`
+	From       time.Time                            `json:"from"`
+	To         time.Time                            `json:"to"`
+	BuildMS    int64                                `json:"build_ms"`
 }
 
-// pricePoint is one close price for the price-chart view.
 type pricePoint struct {
 	Time  time.Time `json:"time"`
 	Close float64   `json:"close"`
 }
 
-// rsiBands tells the UI where to draw the oversold/overbought reference lines.
 type rsiBands struct {
 	Oversold   float64 `json:"oversold"`
 	Overbought float64 `json:"overbought"`
@@ -71,12 +72,11 @@ func validate(req *BacktestRequest) error {
 		req.Days = 30
 	}
 	if req.Days > 60 {
-		req.Days = 60 // keep pagination bounded for the prototype
+		req.Days = 60
 	}
 	return nil
 }
 
-// param reads an int param with a default and clamps it to [min,max].
 func param(p map[string]int, key string, def, min, max int) int {
 	v, ok := p[key]
 	if !ok || v == 0 {
@@ -91,6 +91,15 @@ func param(p map[string]int, key string, def, min, max int) int {
 	return v
 }
 
+func maParams(p map[string]int) (fast, slow int) {
+	fast = param(p, "fast", 10, 2, 200)
+	slow = param(p, "slow", 30, 3, 400)
+	if slow <= fast {
+		slow = fast + 1
+	}
+	return fast, slow
+}
+
 func buildStrategy(name string, p map[string]int) engine.Strategy {
 	switch name {
 	case "rsi_reversion":
@@ -98,29 +107,39 @@ func buildStrategy(name string, p map[string]int) engine.Strategy {
 		oversold := param(p, "oversold", 30, 1, 49)
 		overbought := param(p, "overbought", 70, 51, 99)
 		return strategy.NewRSIReversion(period, float64(oversold), float64(overbought))
+	case "ema_crossover":
+		fast, slow := maParams(p)
+		return strategy.NewEMACrossover(fast, slow)
+	case "bollinger_bounce":
+		period := param(p, "period", 20, 5, 100)
+		stdTenths := param(p, "std_dev", 20, 10, 40)
+		return strategy.NewBollingerBounce(period, float64(stdTenths)/10.0)
+	case "breakout":
+		lookback := param(p, "lookback", 20, 5, 200)
+		return strategy.NewBreakout(lookback)
+	case "momentum_pct":
+		lookback := param(p, "lookback", 20, 5, 200)
+		buyPct := param(p, "buy_pct", 10, 1, 50)
+		sellPct := param(p, "sell_pct", 5, 1, 50)
+		return strategy.NewMomentumPct(lookback, buyPct, sellPct)
+	case "tp_sl":
+		fast, slow := maParams(p)
+		tpPct := param(p, "tp_pct", 10, 1, 100)
+		slPct := param(p, "sl_pct", 5, 1, 50)
+		return strategy.NewTakeProfitStopLoss(fast, slow, tpPct, slPct)
 	default:
-		fast := param(p, "fast", 10, 2, 200)
-		slow := param(p, "slow", 30, 3, 400)
-		if slow <= fast {
-			slow = fast + 1
-		}
+		fast, slow := maParams(p)
 		return strategy.NewMACrossover(fast, slow)
 	}
 }
 
 const initialCash = 10_000.0
 
-// runBacktest executes one fully-isolated backtest: it loads data (Bybit +
-// cache), wires fresh components, runs the engine, and computes metrics. No
-// state is shared between runs.
 func runBacktest(cacheDir string, req BacktestRequest) (*BacktestResult, error) {
 	if err := validate(&req); err != nil {
 		return nil, err
 	}
 
-	// Snap `to` down to the current interval boundary so repeated runs within
-	// the same bar produce an identical [from,to] window — and therefore an
-	// identical cache key, making reruns instant instead of re-fetching.
 	mins := data.IntervalMinutes(req.Interval)
 	bucket := time.Duration(mins) * time.Minute
 	to := time.Now().UTC().Truncate(bucket)
@@ -141,22 +160,24 @@ func runBacktest(cacheDir string, req BacktestRequest) (*BacktestResult, error) 
 
 	res := metrics.Compute(pf.Equity(), len(pf.Trades()), req.Interval)
 
-	// Price series (close per bar) for the price-chart view.
 	price := make([]pricePoint, 0, feed.Len())
 	for _, b := range feed.Bars() {
 		price = append(price, pricePoint{Time: b.Time, Close: b.Close})
 	}
 
-	// Indicator overlays, if the strategy exposes them.
 	var indicators map[string][]strategy.IndicatorPoint
 	if ind, ok := strat.(strategy.Indicating); ok {
 		indicators = ind.Indicators()
 	}
 
-	// RSI reference bands, if applicable.
 	var bands *rsiBands
 	if rsi, ok := strat.(*strategy.RSIReversion); ok {
 		bands = &rsiBands{Oversold: rsi.Oversold(), Overbought: rsi.Overbought()}
+	}
+
+	trades := pf.Trades()
+	if trades == nil {
+		trades = []portfolio.TradeLog{}
 	}
 
 	return &BacktestResult{
@@ -166,7 +187,7 @@ func runBacktest(cacheDir string, req BacktestRequest) (*BacktestResult, error) 
 		Price:      price,
 		Indicators: indicators,
 		RSIBands:   bands,
-		Trades:     pf.Trades(),
+		Trades:     trades,
 		Bars:       feed.Len(),
 		From:       from,
 		To:         to,

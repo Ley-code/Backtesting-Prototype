@@ -1,20 +1,14 @@
 package strategy
 
 import (
-	"time"
-
 	"github.com/leykun/bybit-backtester/internal/engine"
 	"github.com/leykun/bybit-backtester/internal/indicators"
 )
 
-type IndicatorPoint struct {
-	Time  time.Time `json:"time"`
-	Value float64   `json:"value"`
-}
-
-type MACrossover struct {
+type EMACrossover struct {
 	fast, slow int
-	closes     []float64
+	fastEMA    *indicators.EMA
+	slowEMA    *indicators.EMA
 	prevFast   float64
 	prevSlow   float64
 	prevReady  bool
@@ -23,26 +17,29 @@ type MACrossover struct {
 	slowSeries []IndicatorPoint
 }
 
-func NewMACrossover(fast, slow int) *MACrossover {
+func NewEMACrossover(fast, slow int) *EMACrossover {
 	if fast <= 0 {
 		fast = 10
 	}
 	if slow <= fast {
 		slow = fast * 3
 	}
-	return &MACrossover{fast: fast, slow: slow}
+	return &EMACrossover{
+		fast: fast, slow: slow,
+		fastEMA: indicators.NewEMA(fast),
+		slowEMA: indicators.NewEMA(slow),
+	}
 }
 
-func (s *MACrossover) Name() string { return "ma_crossover" }
+func (s *EMACrossover) Name() string { return "ema_crossover" }
 
-func (s *MACrossover) OnBar(bar engine.Bar, position, cash float64) []engine.Order {
-	s.closes = append(s.closes, bar.Close)
-	if len(s.closes) < s.slow {
+func (s *EMACrossover) OnBar(bar engine.Bar, position, cash float64) []engine.Order {
+	fast, fastOK := s.fastEMA.Update(bar.Close)
+	slow, slowOK := s.slowEMA.Update(bar.Close)
+	if !fastOK || !slowOK {
 		return nil
 	}
 
-	fast := indicators.SMA(s.closes, s.fast)
-	slow := indicators.SMA(s.closes, s.slow)
 	s.fastSeries = append(s.fastSeries, IndicatorPoint{Time: bar.Time, Value: fast})
 	s.slowSeries = append(s.slowSeries, IndicatorPoint{Time: bar.Time, Value: slow})
 
@@ -66,12 +63,9 @@ func (s *MACrossover) OnBar(bar engine.Bar, position, cash float64) []engine.Ord
 	return orders
 }
 
-func (s *MACrossover) Indicators() map[string][]IndicatorPoint {
+func (s *EMACrossover) Indicators() map[string][]IndicatorPoint {
 	return map[string][]IndicatorPoint{
-		fastLabel(s.fast): s.fastSeries,
-		slowLabel(s.slow): s.slowSeries,
+		"Fast EMA (" + itoa(s.fast) + ")": s.fastSeries,
+		"Slow EMA (" + itoa(s.slow) + ")": s.slowSeries,
 	}
 }
-
-func fastLabel(n int) string { return "Fast MA (" + itoa(n) + ")" }
-func slowLabel(n int) string { return "Slow MA (" + itoa(n) + ")" }

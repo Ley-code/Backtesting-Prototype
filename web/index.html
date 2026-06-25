@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bybit Backtester — Prototype</title>
+  <title>Bybit Backtester</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -13,7 +13,7 @@
 <body>
   <header>
     <h1>Bybit Backtester</h1>
-    <p class="subtitle">Event-driven backtesting on Bybit historical data — prototype</p>
+    <p class="subtitle">Event-driven backtesting on Bybit historical data</p>
   </header>
 
   <main>
@@ -34,7 +34,6 @@
         <label for="days">Lookback (days)</label>
         <input id="days" type="number" min="1" max="60" value="30" />
       </div>
-      <!-- Strategy-specific params are injected here based on the selected strategy. -->
       <div id="params" class="params"></div>
       <button id="run">Run backtest</button>
     </section>
@@ -66,28 +65,27 @@
       </div>
 
       <div class="chart-toolbar">
-        <div class="toggle-group" id="viewToggle">
-          <button class="toggle active" data-view="equity">Equity curve</button>
-          <button class="toggle" data-view="price">Price + signals</button>
+        <div class="toolbar-actions">
+          <div class="toggle-group" id="viewToggle">
+            <button class="toggle active" data-view="equity">Equity curve</button>
+            <button class="toggle" data-view="price">Price + signals</button>
+          </div>
+          <label class="checkbox" id="showIndicatorsWrap">
+            <input type="checkbox" id="showIndicators" checked />
+            Show indicators
+          </label>
+          <button class="ghost" id="resetZoom">Reset zoom</button>
         </div>
-        <label class="checkbox">
-          <input type="checkbox" id="showIndicators" checked />
-          Show indicators
-        </label>
-        <button class="ghost" id="resetZoom">Reset zoom</button>
-        <span class="hint">scroll / pinch to zoom · drag to pan</span>
       </div>
 
       <div class="chart-wrap main-chart">
         <canvas id="mainChart"></canvas>
       </div>
 
-      <!-- RSI sub-panel: only shown when the strategy reports an RSI series. -->
       <div class="chart-wrap sub-chart hidden" id="rsiWrap">
         <canvas id="rsiChart"></canvas>
       </div>
 
-      <!-- Drawdown (underwater) sub-panel. -->
       <div class="chart-wrap sub-chart">
         <canvas id="ddChart"></canvas>
       </div>

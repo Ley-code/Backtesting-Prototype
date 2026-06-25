@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// JobStatus is the lifecycle state of a backtest job.
 type JobStatus string
 
 const (
@@ -16,7 +15,6 @@ const (
 	StatusError   JobStatus = "error"
 )
 
-// Job is one submitted backtest plus its eventual result.
 type Job struct {
 	ID      string          `json:"id"`
 	Status  JobStatus       `json:"status"`
@@ -25,13 +23,6 @@ type Job struct {
 	Error   string          `json:"error,omitempty"`
 }
 
-// Pool is a fixed-size worker pool. We cap concurrency rather than spawning a
-// goroutine per request: under a burst of submissions, extra jobs queue on the
-// channel instead of all fighting for CPU/memory at once, so the system
-// degrades gracefully. Each job runs with fully isolated state.
-//
-// The job store is in-memory for the prototype; in production this is Postgres
-// (runs, trades, equity curves, metrics).
 type Pool struct {
 	jobs     chan string
 	cacheDir string
@@ -75,8 +66,6 @@ func (p *Pool) worker() {
 	}
 }
 
-// Submit enqueues a job and returns its id. Returns ok=false if the queue is
-// full (back-pressure — the graceful-degradation behavior in action).
 func (p *Pool) Submit(req BacktestRequest) (string, bool) {
 	id := uuid.NewString()
 	p.mu.Lock()

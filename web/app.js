@@ -1,12 +1,8 @@
-// Single-page client: load options + dynamic strategy params, submit a
-// backtest, poll for the result, then render metrics and flexible charts
-// (equity/price toggle, indicator overlays, zoom/pan, drawdown sub-panel).
-
 const $ = (id) => document.getElementById(id);
 
-let OPTIONS = null;          // /api/options payload
-let LAST = null;             // last backtest result
-let view = "equity";         // "equity" | "price"
+let OPTIONS = null;
+let LAST = null;
+let view = "equity";
 let charts = { main: null, rsi: null, dd: null };
 
 async function loadOptions() {
@@ -21,7 +17,6 @@ async function loadOptions() {
   $("strategy").addEventListener("change", renderParams);
 }
 
-// Render the param inputs for the currently-selected strategy.
 function renderParams() {
   const stratVal = $("strategy").value;
   const strat = OPTIONS.strategies.find((s) => s.value === stratVal);
@@ -144,8 +139,6 @@ function render(result) {
   $("results").classList.remove("hidden");
 }
 
-// --- chart helpers ---
-
 const COLORS = {
   equity: "#f7a600",
   price: "#5b9dff",
@@ -159,7 +152,7 @@ const COLORS = {
 
 function tradeMarkers(result, yLookup) {
   const buys = [], sells = [];
-  for (const t of result.trades) {
+  for (const t of result.trades ?? []) {
     const y = yLookup(t);
     if (y === undefined || y === null) continue;
     (t.side === "BUY" ? buys : sells).push({ x: t.time, y });
@@ -207,12 +200,10 @@ function drawMain(result) {
       backgroundColor: "rgba(247,166,0,0.08)",
       borderWidth: 2, pointRadius: 0, fill: true, tension: 0.05,
     });
-    // Trade markers on the equity curve.
     const eqByTime = new Map(result.equity_curve.map((p) => [p.time, p.equity]));
     const { buys, sells } = tradeMarkers(result, (t) => eqByTime.get(t.time));
     pushMarkers(datasets, buys, sells);
   } else {
-    // Price view.
     const price = result.price.map((p) => ({ x: p.time, y: p.close }));
     datasets.push({
       label: "Close",
@@ -221,11 +212,9 @@ function drawMain(result) {
       borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0,
     });
 
-    // Indicator overlays drawn on the price axis (e.g. the MAs).
     if (showInd && result.indicators) {
       let ci = 0;
       for (const [label, series] of Object.entries(result.indicators)) {
-        // RSI lives on its own panel (0-100), skip it on the price chart.
         if (label.startsWith("RSI")) continue;
         datasets.push({
           label,
@@ -237,7 +226,6 @@ function drawMain(result) {
       }
     }
 
-    // Trade markers on the price.
     const pxByTime = new Map(result.price.map((p) => [p.time, p.close]));
     const { buys, sells } = tradeMarkers(result, (t) => pxByTime.get(t.time));
     pushMarkers(datasets, buys, sells);
@@ -311,12 +299,11 @@ function drawRSI(result) {
   });
 }
 
-// Drawdown (underwater) curve: percent below the running peak at each point.
 function drawDrawdown(result) {
   let peak = -Infinity;
   const data = result.equity_curve.map((p) => {
     if (p.equity > peak) peak = p.equity;
-    const dd = peak > 0 ? (p.equity - peak) / peak : 0; // <= 0
+    const dd = peak > 0 ? (p.equity - peak) / peak : 0;
     return { x: p.time, y: dd * 100 };
   });
 
@@ -344,13 +331,18 @@ function drawDrawdown(result) {
   });
 }
 
-// --- toolbar wiring ---
+function syncIndicatorsToggle() {
+  const wrap = $("showIndicatorsWrap");
+  const show = view === "price";
+  wrap.classList.toggle("hidden", !show);
+}
 
 $("viewToggle").addEventListener("click", (e) => {
   const btn = e.target.closest(".toggle");
   if (!btn) return;
   view = btn.dataset.view;
   for (const b of $("viewToggle").querySelectorAll(".toggle")) b.classList.toggle("active", b === btn);
+  syncIndicatorsToggle();
   if (LAST) drawMain(LAST);
 });
 
@@ -361,4 +353,5 @@ $("resetZoom").addEventListener("click", () => {
 });
 
 $("run").addEventListener("click", runBacktest);
+syncIndicatorsToggle();
 loadOptions().catch((e) => setStatus("Failed to load options: " + e.message, true));
