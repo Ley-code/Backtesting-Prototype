@@ -1,13 +1,10 @@
-# Bybit Backtester — Prototype
+# Bybit Backtester
 
 An event-driven backtesting engine in Go that replays **real Bybit historical
-data** and reports **Sharpe ratio** and **maximum drawdown**, with a simple
-single-page UI to run backtests and view the equity curve.
+data** and reports **Sharpe ratio** and **maximum drawdown**, with a single-page
+UI to run backtests and view equity curves, trade markers, and indicator overlays.
 
-This is a working prototype of the full backtesting platform. It is deliberately
-scoped to the prototype requirements, but the architecture is the *real* one —
-nothing here is a throwaway that would be rebuilt for production.
-
+**Live demo:** *http://13.50.126.124/* 
 ---
 
 ## Prototype scope (as requested)
@@ -17,7 +14,7 @@ nothing here is a throwaway that would be rebuilt for production.
 | **Products** | BTCUSDT, ETHUSDT |
 | **Timeframes** | 1 min, 5 min, 15 min |
 | **Metrics** | Max Drawdown, Sharpe ratio |
-| **Strategies** | MA Crossover, RSI Mean-Reversion (my choice — pluggable) |
+| **Strategies** | MA Crossover, EMA Crossover, RSI Mean-Reversion, Bollinger Bounce, Breakout, Momentum %, Take Profit / Stop Loss |
 | **Data source** | Bybit public REST API (`/v5/market/kline`, spot) + on-disk cache |
 
 ---
@@ -153,7 +150,7 @@ decided on one bar fills at the *next* bar's open, not the decision bar's close.
 | **Look-ahead bias** | Time-ordered queue **+ next-bar-open fills** | Two layers: the strictly time-ordered queue means a strategy at *T* can never be handed data after *T*; and orders decided on bar *T* fill at **bar T+1's open**, never at the close they were decided on. Enforced mechanically and covered by a unit test, not by discipline. |
 | **Engine model** | Event-driven (not vectorized) | Slower than a vectorized pass, but correct, honest about ordering, and the same shape as a future **live-trading** path. The right call for a platform, not a one-off script. |
 | **Concurrency** | Fixed-size **worker pool** | Not goroutine-per-request: under a burst, extra jobs queue on a channel instead of all fighting for CPU/memory, so the box **degrades gracefully** instead of falling over. Each run has fully isolated state. |
-| **Strategy = interface** | `Strategy` with `OnBar` | Adding a new trading system is **writing one file** in `internal/strategy`; the engine never changes. The two strategies in the UI are the proof. |
+| **Strategy = interface** | `Strategy` with `OnBar` | Adding a new trading system is **writing one file** in `internal/strategy`; the engine never changes. Seven strategies are registered this way. |
 | **Data = interface** | `DataHandler` with `Next()` | The engine doesn't know data comes from Bybit. Swapping in a live websocket feed or CSV later changes nothing upstream. |
 | **Realism** | Broker models fee + adverse slippage | A backtest with zero fees and perfect fills is a fantasy. Modelling both is why these results are believable (see below). |
 | **Data fetch** | Live Bybit + disk cache | Real integration, but offline-safe and instant on rerun. Cache key snaps to the bar boundary so repeated runs reuse it. |
@@ -198,7 +195,8 @@ won't flatter any of them.
 /cmd/api              → main, server + worker pool wiring
 /internal/engine      → event types, time-ordered queue, the run loop + interfaces
 /internal/data        → Bybit fetch (paginated) + disk cache (DataHandler)
-/internal/strategy    → MA crossover + RSI (both implement Strategy)
+/internal/indicators/  → shared indicator math (SMA, EMA, RSI, Bollinger, Donchian)
+/internal/strategy    → seven pluggable strategies (one file each)
 /internal/broker      → execution simulation (fees, slippage)
 /internal/portfolio   → cash, position, equity curve, trade log
 /internal/metrics     → Sharpe + Max Drawdown (+ unit tests)
@@ -227,4 +225,3 @@ Request body:
 - **Configurable date ranges** and parameter sweeps.
 - **Docker** packaging and deployment.
 - Golden-file tests pinning a known strategy/dataset for reproducibility.
-```
