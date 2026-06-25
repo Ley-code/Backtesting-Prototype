@@ -42,8 +42,8 @@ func (s *Server) handleOptions(c *gin.Context) {
 			{
 				"value": "ma_crossover", "label": "MA Crossover",
 				"params": []gin.H{
-					{"key": "fast", "label": "Fast MA (bars)", "default": 10, "min": 2, "max": 200},
-					{"key": "slow", "label": "Slow MA (bars)", "default": 30, "min": 3, "max": 400},
+					{"key": "fast", "label": "Fast MA (bars)", "default": 20, "min": 2, "max": 200},
+					{"key": "slow", "label": "Slow MA (bars)", "default": 50, "min": 3, "max": 400},
 				},
 			},
 			{

@@ -69,7 +69,7 @@ func validate(req *BacktestRequest) error {
 		return fmt.Errorf("unsupported strategy %q", req.Strategy)
 	}
 	if req.Days <= 0 {
-		req.Days = 30
+		req.Days = 10
 	}
 	if req.Days > 60 {
 		req.Days = 60
@@ -92,8 +92,8 @@ func param(p map[string]int, key string, def, min, max int) int {
 }
 
 func maParams(p map[string]int) (fast, slow int) {
-	fast = param(p, "fast", 10, 2, 200)
-	slow = param(p, "slow", 30, 3, 400)
+	fast = param(p, "fast", 20, 2, 200)
+	slow = param(p, "slow", 50, 3, 400)
 	if slow <= fast {
 		slow = fast + 1
 	}

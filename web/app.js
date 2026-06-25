@@ -13,6 +13,10 @@ async function loadOptions() {
   for (const i of OPTIONS.intervals) $("interval").add(new Option(i.label, i.value));
   for (const s of OPTIONS.strategies) $("strategy").add(new Option(s.label, s.value));
 
+  $("interval").value = "15";
+  $("strategy").value = "ma_crossover";
+  $("days").value = 10;
+
   renderParams();
   $("strategy").addEventListener("change", renderParams);
 }
@@ -66,7 +70,7 @@ async function runBacktest() {
     symbol: $("symbol").value,
     interval: $("interval").value,
     strategy: $("strategy").value,
-    days: parseInt($("days").value, 10) || 30,
+    days: parseInt($("days").value, 10) || 10,
     params: collectParams(),
   };
 
