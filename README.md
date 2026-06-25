@@ -84,28 +84,7 @@ security group (or place it behind a load balancer with TLS later).
 
 ## Architecture
 
-```
-Browser (single-page UI)
-    │  POST /api/backtests  {symbol, interval, strategy, days}
-    │  GET  /api/backtests/:id   (poll for result)
-    ▼
-Gin REST API ──► Worker Pool (fixed N workers, bounded queue)
-    │                   │  one job = one fully-isolated backtest
-    │                   ▼
-    │        ┌──────── BACKTEST ENGINE (per run) ────────┐
-    │        │  DataHandler → Strategy → Broker →         │
-    │        │       Portfolio,  all via a time-ordered   │
-    │        │       EVENT QUEUE                           │
-    │        └────────────────────────────────────────────┘
-    │                   │ normalized result
-    │                   ▼
-    │            PostgreSQL (runs, trades, equity, metrics)
-    │
-    ├── Redis ── bar cache (OHLCV windows)
-    └── Redis ── result cache (identical backtest requests)
-    ▼
-Bybit REST API (cache miss only)
-```
+![System architecture](architecture.png)
 
 ### The five components (the mental model)
 
