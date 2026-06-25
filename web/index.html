@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bybit Backtester — Prototype</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Bybit Backtester</h1>
+    <p class="subtitle">Event-driven backtesting on Bybit historical data — prototype</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <div class="field">
+        <label for="symbol">Product</label>
+        <select id="symbol"></select>
+      </div>
+      <div class="field">
+        <label for="interval">Timeframe</label>
+        <select id="interval"></select>
+      </div>
+      <div class="field">
+        <label for="strategy">Strategy</label>
+        <select id="strategy"></select>
+      </div>
+      <div class="field">
+        <label for="days">Lookback (days)</label>
+        <input id="days" type="number" min="1" max="60" value="30" />
+      </div>
+      <!-- Strategy-specific params are injected here based on the selected strategy. -->
+      <div id="params" class="params"></div>
+      <button id="run">Run backtest</button>
+    </section>
+
+    <p id="status" class="status"></p>
+
+    <section id="results" class="results hidden">
+      <div class="metrics">
+        <div class="metric">
+          <span class="metric-label">Sharpe Ratio</span>
+          <span class="metric-value" id="sharpe">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Max Drawdown</span>
+          <span class="metric-value" id="maxdd">—</span>
+        </div>
+        <div class="metric secondary">
+          <span class="metric-label">Total Return</span>
+          <span class="metric-value" id="totalreturn">—</span>
+        </div>
+        <div class="metric secondary">
+          <span class="metric-label">Trades</span>
+          <span class="metric-value" id="numtrades">—</span>
+        </div>
+        <div class="metric secondary">
+          <span class="metric-label">Bars</span>
+          <span class="metric-value" id="bars">—</span>
+        </div>
+      </div>
+
+      <div class="chart-toolbar">
+        <div class="toggle-group" id="viewToggle">
+          <button class="toggle active" data-view="equity">Equity curve</button>
+          <button class="toggle" data-view="price">Price + signals</button>
+        </div>
+        <label class="checkbox">
+          <input type="checkbox" id="showIndicators" checked />
+          Show indicators
+        </label>
+        <button class="ghost" id="resetZoom">Reset zoom</button>
+        <span class="hint">scroll / pinch to zoom · drag to pan</span>
+      </div>
+
+      <div class="chart-wrap main-chart">
+        <canvas id="mainChart"></canvas>
+      </div>
+
+      <!-- RSI sub-panel: only shown when the strategy reports an RSI series. -->
+      <div class="chart-wrap sub-chart hidden" id="rsiWrap">
+        <canvas id="rsiChart"></canvas>
+      </div>
+
+      <!-- Drawdown (underwater) sub-panel. -->
+      <div class="chart-wrap sub-chart">
+        <canvas id="ddChart"></canvas>
+      </div>
+
+      <p class="run-meta" id="runMeta"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
