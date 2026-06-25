@@ -1,7 +1,12 @@
-.PHONY: run build test tidy clean
+.PHONY: run build test tidy clean up down
 
-run:
-	go run ./cmd/api
+run: up
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
 
 build:
 	go build -o bt ./cmd/api
@@ -13,4 +18,4 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf .cache bt
+	rm -f bt

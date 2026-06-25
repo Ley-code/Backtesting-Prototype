@@ -21,15 +21,10 @@ WORKDIR /app
 COPY --from=builder /out/bybit-backtester ./bybit-backtester
 COPY web ./web
 
-RUN mkdir -p /app/.cache && chown -R app:app /app
-
 ENV ADDR=:8080
-ENV CACHE_DIR=/app/.cache
 ENV WEB_DIR=/app/web
 
 EXPOSE 8080
-
-VOLUME ["/app/.cache"]
 
 USER app
 

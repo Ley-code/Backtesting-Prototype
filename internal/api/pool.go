@@ -1,9 +1,12 @@
 package api
 
 import (
-	"sync"
+	"context"
+	"log"
 
 	"github.com/google/uuid"
+	"github.com/leykun/bybit-backtester/internal/cache"
+	"github.com/leykun/bybit-backtester/internal/store"
 )
 
 type JobStatus string
@@ -24,18 +27,18 @@ type Job struct {
 }
 
 type Pool struct {
-	jobs     chan string
-	cacheDir string
-
-	mu    sync.RWMutex
-	store map[string]*Job
+	jobs    chan string
+	db      *store.DB
+	rdb     *cache.Client
+	ctx     context.Context
 }
 
-func NewPool(numWorkers, queueSize int, cacheDir string) *Pool {
+func NewPool(ctx context.Context, numWorkers, queueSize int, db *store.DB, rdb *cache.Client) *Pool {
 	p := &Pool{
-		jobs:     make(chan string, queueSize),
-		cacheDir: cacheDir,
-		store:    make(map[string]*Job),
+		jobs: make(chan string, queueSize),
+		db:   db,
+		rdb:  rdb,
+		ctx:  ctx,
 	}
 	for i := 0; i < numWorkers; i++ {
 		go p.worker()
@@ -45,55 +48,90 @@ func NewPool(numWorkers, queueSize int, cacheDir string) *Pool {
 
 func (p *Pool) worker() {
 	for id := range p.jobs {
-		p.setStatus(id, StatusRunning)
-
-		p.mu.RLock()
-		req := p.store[id].Request
-		p.mu.RUnlock()
-
-		res, err := runBacktest(p.cacheDir, req)
-
-		p.mu.Lock()
-		job := p.store[id]
-		if err != nil {
-			job.Status = StatusError
-			job.Error = err.Error()
-		} else {
-			job.Status = StatusDone
-			job.Result = res
+		if err := p.db.SetStatus(p.ctx, id, string(StatusRunning), ""); err != nil {
+			log.Printf("set running %s: %v", id, err)
+			continue
 		}
-		p.mu.Unlock()
+
+		row, err := p.db.GetRun(p.ctx, id)
+		if err != nil {
+			_ = p.db.SetStatus(p.ctx, id, string(StatusError), err.Error())
+			continue
+		}
+		req := BacktestRequest{
+			Symbol: row.Symbol, Interval: row.Interval, Strategy: row.Strategy,
+			Days: row.Days, Params: row.Params,
+		}
+
+		res, err := runBacktest(p.ctx, p.rdb, req)
+		if err != nil {
+			_ = p.db.SetStatus(p.ctx, id, string(StatusError), err.Error())
+			continue
+		}
+
+		if err := SaveResult(p.ctx, p.db, id, res); err != nil {
+			_ = p.db.SetStatus(p.ctx, id, string(StatusError), err.Error())
+			continue
+		}
+		if err := p.db.SetStatus(p.ctx, id, string(StatusDone), ""); err != nil {
+			log.Printf("set done %s: %v", id, err)
+			continue
+		}
+
+		hash, err := store.RequestHash(req.Symbol, req.Interval, req.Strategy, req.Days, req.Params)
+		if err != nil {
+			log.Printf("result cache hash %s: %v", id, err)
+			continue
+		}
+		if err := p.rdb.SetResultRunID(p.ctx, hash, id); err != nil {
+			log.Printf("result cache set %s: %v", id, err)
+		}
 	}
 }
 
 func (p *Pool) Submit(req BacktestRequest) (string, bool) {
+	if err := validate(&req); err != nil {
+		return "", false
+	}
+
+	hash, err := store.RequestHash(req.Symbol, req.Interval, req.Strategy, req.Days, req.Params)
+	if err != nil {
+		return "", false
+	}
+
+	if cachedID, ok, err := p.rdb.GetResultRunID(p.ctx, hash); err == nil && ok {
+		if row, err := p.db.GetRun(p.ctx, cachedID); err == nil && row.Status == string(StatusDone) {
+			return cachedID, true
+		}
+	}
+
+	if existingID, ok, err := p.db.FindDoneRunByHash(p.ctx, hash); err == nil && ok {
+		_ = p.rdb.SetResultRunID(p.ctx, hash, existingID)
+		return existingID, true
+	}
+
 	id := uuid.NewString()
-	p.mu.Lock()
-	p.store[id] = &Job{ID: id, Status: StatusQueued, Request: req}
-	p.mu.Unlock()
+	if err := p.db.CreateRun(p.ctx, id, hash, req.Symbol, req.Interval, req.Strategy, req.Days, req.Params); err != nil {
+		return "", false
+	}
 
 	select {
 	case p.jobs <- id:
 		return id, true
 	default:
-		p.mu.Lock()
-		delete(p.store, id)
-		p.mu.Unlock()
+		_ = p.db.SetStatus(p.ctx, id, string(StatusError), "queue full")
 		return "", false
 	}
 }
 
 func (p *Pool) Get(id string) (*Job, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	job, ok := p.store[id]
-	return job, ok
-}
-
-func (p *Pool) setStatus(id string, s JobStatus) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if job, ok := p.store[id]; ok {
-		job.Status = s
+	row, err := p.db.GetRun(p.ctx, id)
+	if err != nil {
+		return nil, false
 	}
+	job, err := runRowToJob(p.ctx, p.db, row)
+	if err != nil {
+		return nil, false
+	}
+	return job, true
 }

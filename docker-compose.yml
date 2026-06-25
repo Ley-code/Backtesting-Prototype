@@ -1,4 +1,29 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: backtest
+      POSTGRES_PASSWORD: backtest
+      POSTGRES_DB: backtest
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backtest -d backtest"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   bybit-backtester:
     build:
       context: .
@@ -8,11 +33,18 @@ services:
       - "80:8080"
     environment:
       ADDR: ":8080"
-      CACHE_DIR: /app/.cache
       WEB_DIR: /app/web
-    volumes:
-      - bybit-backtester-cache:/app/.cache
+      DATABASE_URL: postgres://backtest:backtest@postgres:5432/backtest?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      REDIS_BARS_TTL: 168h
+      REDIS_RESULT_TTL: 24h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  bybit-backtester-cache:
+  postgres-data:
+  redis-data:

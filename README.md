@@ -7,7 +7,7 @@ UI to run backtests and view equity curves, trade markers, and indicator overlay
 **Live demo:** *http://13.50.126.124/* 
 ---
 
-## Prototype scope (as requested)
+## Scope
 
 | Dimension | Values |
 |---|---|
@@ -15,21 +15,23 @@ UI to run backtests and view equity curves, trade markers, and indicator overlay
 | **Timeframes** | 1 min, 5 min, 15 min |
 | **Metrics** | Max Drawdown, Sharpe ratio |
 | **Strategies** | MA Crossover, EMA Crossover, RSI Mean-Reversion, Bollinger Bounce, Breakout, Momentum %, Take Profit / Stop Loss |
-| **Data source** | Bybit public REST API (`/v5/market/kline`, spot) + on-disk cache |
+| **Data source** | Bybit public REST API (`/v5/market/kline`, spot) + Redis bar cache |
 
 ---
 
 ## Quick start
 
+Requires **PostgreSQL** and **Redis**. Use Docker Compose:
+
 ```bash
-# from the project root
-go run ./cmd/api
-# open http://localhost:8080
+docker compose up -d --build
+# open http://localhost
 ```
 
 Pick a product, timeframe, and strategy, set a lookback window, and hit **Run
-backtest**. First run for a given window fetches from Bybit (a few seconds);
-identical reruns are served from cache in ~15ms.
+backtest**. First run for a window fetches from Bybit (a few seconds); identical
+bar windows are served from Redis; identical backtest requests return instantly
+from the result cache.
 
 Run the tests:
 
@@ -39,27 +41,24 @@ go test ./...
 
 ## Docker / EC2
 
-Build and run locally with Docker:
-
-```bash
-docker build -t bybit-backtester .
-docker run --rm -p 8080:8080 -v bybit-backtester-cache:/app/.cache bybit-backtester
-```
-
-Or use Docker Compose (recommended for EC2 because it keeps the cache volume and
-auto-restarts the container):
-
 ```bash
 docker compose up -d --build
 ```
 
-Then open `http://<server-ip>:8080`.
+Then open `http://<server-ip>` (port 80 mapped to the app).
 
-The container uses these environment variables:
+Services: **bybit-backtester**, **postgres**, **redis**.
 
-- `ADDR` — HTTP listen address inside the container (defaults to `:8080`)
-- `CACHE_DIR` — writable directory for Bybit historical-data cache
-- `WEB_DIR` — location of the bundled frontend assets
+Environment variables (set in `docker-compose.yml`):
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string (required) |
+| `REDIS_URL` | Redis connection string (required) |
+| `REDIS_BARS_TTL` | OHLCV bar cache TTL (default `168h`) |
+| `REDIS_RESULT_TTL` | Backtest result cache TTL (default `24h`) |
+| `ADDR` | HTTP listen address (default `:8080`) |
+| `WEB_DIR` | Frontend assets path |
 
 ### EC2 deploy flow
 
@@ -78,8 +77,8 @@ git pull
 docker compose up -d --build
 ```
 
-If you want the app reachable publicly, allow inbound TCP `8080` in the EC2
-security group (or place it behind Nginx / an AWS load balancer later).
+If you want the app reachable publicly, allow inbound TCP `80` in the EC2
+security group (or place it behind a load balancer with TLS later).
 
 ---
 
@@ -98,19 +97,20 @@ Gin REST API ──► Worker Pool (fixed N workers, bounded queue)
     │        │       Portfolio,  all via a time-ordered   │
     │        │       EVENT QUEUE                           │
     │        └────────────────────────────────────────────┘
-    │                   │ equity curve + trade log
+    │                   │ normalized result
     │                   ▼
-    │            Metrics (Sharpe, Max Drawdown)
+    │            PostgreSQL (runs, trades, equity, metrics)
+    │
+    ├── Redis ── bar cache (OHLCV windows)
+    └── Redis ── result cache (identical backtest requests)
     ▼
-Bybit Data Layer  ──►  on-disk JSON cache
-(public REST, paginated)
+Bybit REST API (cache miss only)
 ```
 
 ### The five components (the mental model)
 
-1. **Data Handler** (`internal/data`) — fetches OHLCV bars from Bybit, paginates
-   the 1000-bar API limit, caches to disk, and streams bars **one at a time, in
-   chronological order**. This is where look-ahead bias lives or dies.
+1. **Data Handler** (`internal/data`) — fetches OHLCV bars from Bybit on cache
+   miss, stores windows in **Redis**, streams bars **one at a time, in order**.
 2. **Strategy** (`internal/strategy`) — receives each bar, holds its own
    indicator state (moving averages / RSI), and emits orders. Pluggable via one
    Go interface.
@@ -152,40 +152,11 @@ decided on one bar fills at the *next* bar's open, not the decision bar's close.
 | **Concurrency** | Fixed-size **worker pool** | Not goroutine-per-request: under a burst, extra jobs queue on a channel instead of all fighting for CPU/memory, so the box **degrades gracefully** instead of falling over. Each run has fully isolated state. |
 | **Strategy = interface** | `Strategy` with `OnBar` | Adding a new trading system is **writing one file** in `internal/strategy`; the engine never changes. Seven strategies are registered this way. |
 | **Data = interface** | `DataHandler` with `Next()` | The engine doesn't know data comes from Bybit. Swapping in a live websocket feed or CSV later changes nothing upstream. |
-| **Realism** | Broker models fee + adverse slippage | A backtest with zero fees and perfect fills is a fantasy. Modelling both is why these results are believable (see below). |
-| **Data fetch** | Live Bybit + disk cache | Real integration, but offline-safe and instant on rerun. Cache key snaps to the bar boundary so repeated runs reuse it. |
-| **Job/result store** | In-memory (prototype) | Production is Postgres: `runs`, `trades`, `equity_curve`, `metrics`. Called out honestly as the next step, not hidden. |
+| **Realism** | Broker models fee + adverse slippage | A backtest with zero fees and perfect fills is a fantasy. Modelling both keeps results grounded in realistic execution costs. |
+| **Data fetch** | Bybit + **Redis bar cache** | Real integration; reruns on the same window skip Bybit. |
+| **Job/result store** | **PostgreSQL** (normalized) | Runs, trades, equity curve, price, indicators — durable across restarts. |
+| **Result cache** | **Redis** | Identical backtest requests return the cached run instantly. |
 | **Async API** | POST enqueues → GET polls | This is what actually exercises the worker pool, and it's the model that scales to long-running backtests. |
-
----
-
-## About the results (read this before the demo)
-
-Results vary by strategy, parameters, timeframe, and the market window — which is
-exactly what an honest backtester should show. A few things to expect and to be
-ready to explain:
-
-- **The numbers respond to the parameters.** On BTC 15m over 30 days, a tighter
-  MA (10/30) over-trades (~120 trades) and bleeds out on fees, while a wider MA
-  (20/50) trades less (~66 trades) and loses less. **Fewer trades → less fee
-  drag** — visible directly in the metrics. The RSI strategy, trading rarely
-  (~4 trades), can come out **clearly positive** on the same window. There is no
-  single "the result" — that's the point of a backtester.
-- **Costs are real.** The broker charges a fee on every trade and applies
-  adverse slippage, so high-frequency whipsaw strategies are correctly punished.
-- **Large Sharpe magnitudes** come from **annualizing minute-bar returns**
-  (×√525,600 for 1m). That's the standard formula; sign and ordering are what
-  matter and they're consistent.
-- **Fixing look-ahead made results more believable, not just more correct.**
-  Filling at the next bar's open (instead of the close the signal was computed
-  on) removes a free, unrealistic edge — so the equity curves you see are ones a
-  real trader could have actually achieved.
-
-**This is the whole point.** A backtester's job is to tell you the truth —
-including when a strategy loses money after costs, and including when it doesn't.
-An engine that always prints green is the one you shouldn't trust. Adding or
-tuning a strategy is one file / a few inputs; the engine's value is that it
-won't flatter any of them.
 
 ---
 
@@ -194,13 +165,15 @@ won't flatter any of them.
 ```
 /cmd/api              → main, server + worker pool wiring
 /internal/engine      → event types, time-ordered queue, the run loop + interfaces
-/internal/data        → Bybit fetch (paginated) + disk cache (DataHandler)
-/internal/indicators/  → shared indicator math (SMA, EMA, RSI, Bollinger, Donchian)
+/internal/data        → Bybit fetch + Redis bar cache (DataHandler)
+/internal/cache       → Redis client (bars + result cache)
+/internal/store       → PostgreSQL job store + migrations
+/internal/indicators/ → shared indicator math (SMA, EMA, RSI, Bollinger, Donchian)
 /internal/strategy    → seven pluggable strategies (one file each)
 /internal/broker      → execution simulation (fees, slippage)
 /internal/portfolio   → cash, position, equity curve, trade log
 /internal/metrics     → Sharpe + Max Drawdown (+ unit tests)
-/internal/api         → Gin handlers, worker pool, job store, per-run wiring
+/internal/api         → Gin handlers, worker pool, persist layer
 /web                  → single-page UI (chart + metrics)
 ```
 
@@ -218,10 +191,9 @@ Request body:
 { "symbol": "BTCUSDT", "interval": "5", "strategy": "rsi_reversion", "days": 30 }
 ```
 
-## What production (the full project) adds
+## Roadmap
 
-- **Postgres** for runs, trades, equity curves, and metrics (durable, queryable).
-- **More metrics** (win rate, profit factor, CAGR) and more strategies.
-- **Configurable date ranges** and parameter sweeps.
-- **Docker** packaging and deployment.
+- **More metrics** (win rate, profit factor, CAGR) and parameter sweeps.
+- **Configurable date ranges** beyond rolling lookback days.
+- **External job queue** (Redis Streams / NATS) for multi-instance workers.
 - Golden-file tests pinning a known strategy/dataset for reproducibility.

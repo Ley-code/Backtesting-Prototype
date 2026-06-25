@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/leykun/bybit-backtester/internal/broker"
+	"github.com/leykun/bybit-backtester/internal/cache"
 	"github.com/leykun/bybit-backtester/internal/data"
 	"github.com/leykun/bybit-backtester/internal/engine"
 	"github.com/leykun/bybit-backtester/internal/metrics"
@@ -135,7 +137,7 @@ func buildStrategy(name string, p map[string]int) engine.Strategy {
 
 const initialCash = 10_000.0
 
-func runBacktest(cacheDir string, req BacktestRequest) (*BacktestResult, error) {
+func runBacktest(ctx context.Context, rdb *cache.Client, req BacktestRequest) (*BacktestResult, error) {
 	if err := validate(&req); err != nil {
 		return nil, err
 	}
@@ -146,7 +148,7 @@ func runBacktest(cacheDir string, req BacktestRequest) (*BacktestResult, error) 
 	from := to.Add(-time.Duration(req.Days) * 24 * time.Hour)
 
 	started := time.Now()
-	feed, err := data.Load(cacheDir, req.Symbol, req.Interval, from, to)
+	feed, err := data.Load(ctx, rdb, req.Symbol, req.Interval, from, to)
 	if err != nil {
 		return nil, err
 	}
