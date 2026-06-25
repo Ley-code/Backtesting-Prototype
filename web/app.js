@@ -104,7 +104,13 @@ async function poll(id) {
   for (let attempt = 0; attempt < 200; attempt++) {
     const res = await fetch(`/api/backtests/${id}`);
     const job = await res.json();
-    if (job.status === "done" || job.status === "error") return job;
+    if (job.status === "error") return job;
+    if (job.status === "done") {
+      const resultRes = await fetch(`/api/backtests/${id}/result`);
+      const result = await resultRes.json();
+      if (!resultRes.ok) throw new Error(result.error || "failed to load result");
+      return { ...job, result };
+    }
     setStatus(job.status === "running" ? "Running backtest…" : "Queued…");
     await new Promise((r) => setTimeout(r, 150));
   }

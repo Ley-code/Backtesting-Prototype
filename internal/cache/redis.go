@@ -42,6 +42,10 @@ func resultKey(hash string) string {
 	return fmt.Sprintf("bt:%s:result:%s", keyVersion, hash)
 }
 
+func ResultPayloadKey(runID string) string {
+	return fmt.Sprintf("bt:%s:payload:%s", keyVersion, runID)
+}
+
 func (c *Client) GetBars(ctx context.Context, key string) ([]engine.Bar, bool, error) {
 	b, err := c.rdb.Get(ctx, key).Bytes()
 	if err == redis.Nil {
@@ -81,4 +85,26 @@ func (c *Client) GetResultRunID(ctx context.Context, requestHash string) (string
 
 func (c *Client) SetResultRunID(ctx context.Context, requestHash, runID string) error {
 	return c.rdb.Set(ctx, resultKey(requestHash), runID, c.resultTTL).Err()
+}
+
+func (c *Client) GetPayload(ctx context.Context, runID string, dest any) (bool, error) {
+	b, err := c.rdb.Get(ctx, ResultPayloadKey(runID)).Bytes()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(b, dest); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *Client) SetPayload(ctx context.Context, runID string, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return c.rdb.Set(ctx, ResultPayloadKey(runID), b, c.resultTTL).Err()
 }

@@ -277,25 +277,3 @@ func loadIndicators(ctx context.Context, db *store.DB, runID string) (map[string
 	}
 	return out, rows.Err()
 }
-
-func runRowToJob(ctx context.Context, db *store.DB, row *store.RunRow) (*Job, error) {
-	job := &Job{
-		ID:     row.ID,
-		Status: JobStatus(row.Status),
-		Request: BacktestRequest{
-			Symbol: row.Symbol, Interval: row.Interval, Strategy: row.Strategy,
-			Days: row.Days, Params: row.Params,
-		},
-	}
-	if row.ErrorMessage != "" {
-		job.Error = row.ErrorMessage
-	}
-	if row.Status == string(StatusDone) {
-		res, err := LoadResult(ctx, db, row.ID)
-		if err != nil {
-			return nil, err
-		}
-		job.Result = res
-	}
-	return job, nil
-}

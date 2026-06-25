@@ -26,6 +26,7 @@ func (s *Server) Router() *gin.Engine {
 		api.GET("/options", s.handleOptions)
 		api.POST("/backtests", s.handleSubmit)
 		api.GET("/backtests/:id", s.handleGet)
+		api.GET("/backtests/:id/result", s.handleGetResult)
 	}
 
 	r.StaticFile("/", s.webDir+"/index.html")
@@ -115,10 +116,29 @@ func (s *Server) handleSubmit(c *gin.Context) {
 }
 
 func (s *Server) handleGet(c *gin.Context) {
-	job, ok := s.pool.Get(c.Param("id"))
+	job, ok := s.pool.GetStatus(c.Param("id"))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
 		return
 	}
 	c.JSON(http.StatusOK, job)
+}
+
+func (s *Server) handleGetResult(c *gin.Context) {
+	id := c.Param("id")
+	job, ok := s.pool.GetStatus(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+		return
+	}
+	if job.Status != StatusDone {
+		c.JSON(http.StatusConflict, gin.H{"error": "result not ready", "status": job.Status})
+		return
+	}
+	result, ok := s.pool.GetResult(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

@@ -162,7 +162,8 @@ decided on one bar fills at the *next* bar's open, not the decision bar's close.
 |---|---|---|
 | `GET` | `/api/options` | Products / timeframes / strategies for the UI |
 | `POST` | `/api/backtests` | Enqueue a run → `{id, status}` (202) |
-| `GET` | `/api/backtests/:id` | Poll job; returns metrics + equity curve when done |
+| `GET` | `/api/backtests/:id` | Poll job status (lightweight) |
+| `GET` | `/api/backtests/:id/result` | Full metrics + equity curve when done |
 
 Request body:
 
