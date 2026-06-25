@@ -40,6 +40,50 @@ Run the tests:
 go test ./...
 ```
 
+## Docker / EC2
+
+Build and run locally with Docker:
+
+```bash
+docker build -t bybit-backtester .
+docker run --rm -p 8080:8080 -v bybit-backtester-cache:/app/.cache bybit-backtester
+```
+
+Or use Docker Compose (recommended for EC2 because it keeps the cache volume and
+auto-restarts the container):
+
+```bash
+docker compose up -d --build
+```
+
+Then open `http://<server-ip>:8080`.
+
+The container uses these environment variables:
+
+- `ADDR` — HTTP listen address inside the container (defaults to `:8080`)
+- `CACHE_DIR` — writable directory for Bybit historical-data cache
+- `WEB_DIR` — location of the bundled frontend assets
+
+### EC2 deploy flow
+
+On a small Ubuntu EC2 instance with Docker and the Compose plugin installed:
+
+```bash
+git clone <your-repo-url>
+cd bybit-backtester
+docker compose up -d --build
+```
+
+On later deploys:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+If you want the app reachable publicly, allow inbound TCP `8080` in the EC2
+security group (or place it behind Nginx / an AWS load balancer later).
+
 ---
 
 ## Architecture

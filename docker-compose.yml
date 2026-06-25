@@ -1,0 +1,18 @@
+services:
+  bybit-backtester:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bybit-backtester:latest
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      ADDR: ":8080"
+      CACHE_DIR: /app/.cache
+      WEB_DIR: /app/web
+    volumes:
+      - bybit-backtester-cache:/app/.cache
+    restart: unless-stopped
+
+volumes:
+  bybit-backtester-cache:

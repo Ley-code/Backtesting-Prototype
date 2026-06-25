@@ -1,0 +1,6 @@
+.git
+.cache
+bt
+*.out
+BACKTESTING_GUIDE.pdf
+BACKTESTING_GUIDE.md
